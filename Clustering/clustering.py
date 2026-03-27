@@ -1,80 +1,77 @@
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
 
 # 1. TẢI DỮ LIỆU
-print("--- ĐANG TẢI VÀ XỬ LÝ DỮ LIỆU ---")
-du_lieu = pd.read_csv(r'D:/CODING_DATA/cs-training.csv')
+df = pd.read_csv(r'D:/CODING_DATA/cs-training.csv')
+if 'Unnamed: 0' in df.columns:
+    df = df.drop(columns=['Unnamed: 0'])
 
-# Bỏ cột index thừa nếu có (Unnamed: 0)
-if du_lieu.columns[0] == 'Unnamed: 0':
-    du_lieu = du_lieu.drop(columns=['Unnamed: 0'])
-
-# 2. CHUẨN HÓA TÊN CỘT VỀ TIẾNG VIỆT CÓ DẤU
+# 2. CHUẨN HÓA TÊN CỘT
 bang_doi_ten = {
-    'SeriousDlqin2yrs': 'Vỡ_Nợ_Trong_2_Năm',
-    'RevolvingUtilizationOfUnsecuredLines': 'Tỷ_Lệ_Sử_Dụng_Hạn_Mức',
-    'age': 'Tuổi',
-    'NumberOfTime30-59DaysPastDueNotWorse': 'Số_Lần_Trễ_Hạn_30_Đến_59_Ngày',
-    'DebtRatio': 'Tỷ_Lệ_Nợ_Trên_Thu_Nhập',
-    'MonthlyIncome': 'Thu_Nhập_Hàng_Tháng',
-    'NumberOfOpenCreditLinesAndLoans': 'Số_Khoản_Tín_Dụng_Đang_Mở',
-    'NumberOfTimes90DaysLate': 'Số_Lần_Trễ_Hạn_Trên_90_Ngày',
-    'NumberRealEstateLoansOrLines': 'Số_Khoản_Vay_Bất_Động_Sản',
-    'NumberOfTime60-89DaysPastDueNotWorse': 'Số_Lần_Trễ_Hạn_60_Đến_89_Ngày',
-    'NumberOfDependents': 'Số_Người_Phụ_Thuộc'
+    'SeriousDlqin2yrs': 'Vo_No',
+    'RevolvingUtilizationOfUnsecuredLines': 'Ty_Le_Su_Dung',
+    'age': 'Tuoi',
+    'NumberOfTime30-59DaysPastDueNotWorse': 'Tre_Han_30_59',
+    'DebtRatio': 'Ty_Le_No',
+    'MonthlyIncome': 'Thu_Nhap',
+    'NumberOfOpenCreditLinesAndLoans': 'So_Khoan_Tin_Dung',
+    'NumberOfTimes90DaysLate': 'Tre_Han_Tren_90',
+    'NumberRealEstateLoansOrLines': 'Vay_BDS',
+    'NumberOfTime60-89DaysPastDueNotWorse': 'Tre_Han_60_89',
+    'NumberOfDependents': 'Nguoi_Phu_Thuoc'
 }
-du_lieu = du_lieu.rename(columns=bang_doi_ten)
-print("-> Đã đổi tên cột sang Tiếng Việt có dấu.")
+df = df.rename(columns=bang_doi_ten)
 
-# 3. XÓA BẢN GHI TRÙNG LẶP (Lần 1 - Dọn rác dữ liệu thô)
-so_dong_trung_lap_1 = du_lieu.duplicated().sum()
-du_lieu = du_lieu.drop_duplicates(keep='first')
-print(f"-> Đã xóa {so_dong_trung_lap_1} bản ghi trùng lặp ban đầu.")
+# 3. XỬ LÝ GIÁ TRỊ THIẾU (ADVANCED)
+# A. Tạo biến cờ (Missing Indicator) - Lưu lại thông tin về việc dữ liệu bị thiếu
+df['Thu_Nhap_Bi_Thieu'] = df['Thu_Nhap'].isnull().astype(int)
+df['Phu_Thuoc_Bi_Thieu'] = df['Nguoi_Phu_Thuoc'].isnull().astype(int)
 
-# 4. XỬ LÝ GIÁ TRỊ THIẾU (Missing Values)
-du_lieu['Thu_Nhập_Hàng_Tháng'] = du_lieu['Thu_Nhập_Hàng_Tháng'].fillna(du_lieu['Thu_Nhập_Hàng_Tháng'].median())
-du_lieu['Số_Người_Phụ_Thuộc'] = du_lieu['Số_Người_Phụ_Thuộc'].fillna(du_lieu['Số_Người_Phụ_Thuộc'].median())
+# B. Điền "Người phụ thuộc" theo Nhóm Tuổi (Groupby Imputation)
+# Tạo nhóm tuổi: Thanh niên, Trung niên, Cao tuổi
+df['Nhom_Tuoi'] = pd.cut(df['Tuoi'], bins=[0, 30, 45, 60, 150], labels=[1, 2, 3, 4])
+df['Nguoi_Phu_Thuoc'] = df.groupby('Nhom_Tuoi')['Nguoi_Phu_Thuoc'].transform(lambda x: x.fillna(x.median()))
+df = df.drop(columns=['Nhom_Tuoi'])
 
-# XÓA BẢN GHI TRÙNG LẶP (Lần 2 - Xóa các dòng giống hệt nhau phát sinh sau khi điền Median)
-so_dong_trung_lap_2 = du_lieu.duplicated().sum()
-du_lieu = du_lieu.drop_duplicates(keep='first')
-print(f"-> Đã dọn dẹp thêm {so_dong_trung_lap_2} bản ghi trùng lặp phát sinh do điền giá trị thiếu.")
+# C. Điền "Thu nhập" bằng Iterative Imputer (Machine Learning Imputation)
+# Nó sẽ dùng Tuổi, Tỷ lệ nợ, và Số khoản vay để dự đoán mức thu nhập hợp lý nhất
+imputer = IterativeImputer(random_state=42, max_iter=10)
+cols_to_use = ['Tuoi', 'Ty_Le_No', 'Thu_Nhap', 'So_Khoan_Tin_Dung', 'Vay_BDS']
+df[cols_to_use] = imputer.fit_transform(df[cols_to_use])
 
-# 5. LOẠI BỎ GIÁ TRỊ NGOẠI LAI (Outliers) BẰNG PHƯƠNG PHÁP IQR
-cac_cot_can_loc = ['Tỷ_Lệ_Sử_Dụng_Hạn_Mức', 'Tỷ_Lệ_Nợ_Trên_Thu_Nhập', 'Thu_Nhập_Hàng_Tháng']
-so_dong_truoc_khi_loc = du_lieu.shape[0]
-
-for cot in cac_cot_can_loc:
-    Q1 = du_lieu[cot].quantile(0.25)
-    Q3 = du_lieu[cot].quantile(0.75)
+# 4. XỬ LÝ NGOẠI LAI (WINSORIZATION - CAPPING)
+# Thay vì xóa dòng, ta "chặn" giá trị ở mức 1.5 * IQR để giữ lại dữ liệu
+def cap_outliers(series):
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
     IQR = Q3 - Q1
-    gioi_han_duoi = Q1 - 1.5 * IQR
-    gioi_han_tren = Q3 + 1.5 * IQR
-    du_lieu = du_lieu[(du_lieu[cot] >= gioi_han_duoi) & (du_lieu[cot] <= gioi_han_tren)]
+    lower, upper = Q1 - 1.5 * IQR, Q3 + 1.5 * IQR
+    return series.clip(lower, upper)
 
-so_dong_bi_loai_bo = so_dong_truoc_khi_loc - du_lieu.shape[0]
-print(f"-> Đã xóa {so_dong_bi_loai_bo} bản ghi ngoại lai (Outliers).")
+for col in ['Ty_Le_Su_Dung', 'Ty_Le_No', 'Thu_Nhap']:
+    df[col] = cap_outliers(df[col])
 
-# 6. CHUẨN HÓA DỮ LIỆU BẰNG STANDARD SCALER
-dac_trung = du_lieu.drop(columns=['Vỡ_Nợ_Trong_2_Năm'])
-nhan = du_lieu['Vỡ_Nợ_Trong_2_Năm']
+# 5. CHUẨN HÓA (STANDARD SCALER)
+features = df.drop(columns=['Vo_No'])
+target = df['Vo_No']
 
-bo_chuan_hoa = StandardScaler()
-du_lieu_da_chuan_hoa = bo_chuan_hoa.fit_transform(dac_trung)
+scaler = StandardScaler()
+df_scaled = pd.DataFrame(scaler.fit_transform(features), columns=features.columns)
+df_scaled['Vo_No'] = target.values
 
-bang_du_lieu_cuoi_cung = pd.DataFrame(du_lieu_da_chuan_hoa, columns=dac_trung.columns)
+# 6. LÀM TRÒN VÀ XỬ LÝ TRÙNG LẶP TRIỆT ĐỂ
+# Làm tròn 3 chữ số giúp gom các dòng có sai số float cực nhỏ lại với nhau
+df_scaled = df_scaled.round(3)
+truoc_xoa = len(df_scaled)
+df_scaled = df_scaled.drop_duplicates()
+sau_xoa = len(df_scaled)
 
-# 7. LÀM TRÒN TOÀN BỘ VỀ 3 CHỮ SỐ THẬP PHÂN
-bang_du_lieu_cuoi_cung = bang_du_lieu_cuoi_cung.round(3)
-print("-> Đã làm tròn toàn bộ dữ liệu về 3 chữ số thập phân.")
+# 7. XUẤT FILE
+df_scaled.to_excel('Du_Lieu_Tin_Dung_Da_Xu_Ly_Full.xlsx', index=False)
 
-# Gắn lại nhãn vỡ nợ vào bảng (Nhãn không bị thay đổi vì chỉ là 0 và 1)
-bang_du_lieu_cuoi_cung['Vỡ_Nợ_Trong_2_Năm'] = nhan.values
-
-# 8. XUẤT RA FILE EXCEL
-ten_file_xuat = 'Du_Lieu_Tin_Dung_Da_Xu_Ly_Full.xlsx'
-bang_du_lieu_cuoi_cung.to_excel(ten_file_xuat, index=False, engine='openpyxl')
-
-print(f"\n--- KẾT QUẢ TỔNG KẾT ---")
-print(f"Số lượng bản ghi cuối cùng đưa vào mô hình: {bang_du_lieu_cuoi_cung.shape[0]} dòng")
-print(f"Đã xuất file thành công: {ten_file_xuat}")
+print(f"Số lượng dòng ban đầu: {len(df)}")
+print(f"Số lượng dòng cuối cùng: {sau_xoa}")
+print(f"Số dòng trùng lặp thực sự đã xóa: {truoc_xoa - sau_xoa}")
