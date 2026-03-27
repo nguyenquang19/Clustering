@@ -24,6 +24,7 @@ else:
     print(f"-> Đã xóa {so_dong_goc - len(df)} bản ghi trùng lặp thô ban đầu.")
 
     # 4. CHUẨN HÓA TÊN CỘT
+   # Thay bảng đổi tên cũ bằng bảng không dấu này:
     bang_doi_ten = {
         'SeriousDlqin2yrs': 'Vo_No',
         'RevolvingUtilizationOfUnsecuredLines': 'Ty_Le_Su_Dung',
@@ -32,7 +33,7 @@ else:
         'DebtRatio': 'Ty_Le_No',
         'MonthlyIncome': 'Thu_Nhap',
         'NumberOfOpenCreditLinesAndLoans': 'So_Khoan_Tin_Dung',
-        'NumberOfTimes90DaysLate': 'Tre_Han_Tren_90',
+        'NumberOfTimes90DaysLate': 'Tre_Han_90', # Đã đổi thành không dấu
         'NumberRealEstateLoansOrLines': 'Vay_BDS',
         'NumberOfTime60-89DaysPastDueNotWorse': 'Tre_Han_60_89',
         'NumberOfDependents': 'Nguoi_Phu_Thuoc'
@@ -66,8 +67,9 @@ else:
     df_scaled = pd.DataFrame(scaler.fit_transform(features), columns=features.columns)
     df_scaled['Vo_No'] = target.values
 
+    # 8. LÀM TRÒN VÀ XÓA TRÙNG LẶP TRIỆT ĐỂ (Lần 2)
     # Ép kiểu và làm tròn để máy tính nhận diện trùng lặp chính xác 100%
-    df_scaled = df_scaled.round(4)
+    df_scaled = df_scaled.round(6)
     so_dong_truoc_cuoi = len(df_scaled)
     df_scaled = df_scaled.drop_duplicates()
     

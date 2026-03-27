@@ -6,121 +6,97 @@ from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 import scipy.cluster.hierarchy as shc
+import os
 import warnings
-warnings.filterwarnings('ignore') # Ẩn các cảnh báo đỏ cho code sạch đẹp
+warnings.filterwarnings('ignore')
 
-print("=== VẼ BIỂU ĐỒ HỌC THUẬT & PHÂN CỤM (TỪ FILE ĐÃ XỬ LÝ) ===")
+print("=== VẼ BIỂU ĐỒ HỌC THUẬT & PHÂN CỤM (TỐI ƯU) ===")
 
 # =========================================================
-# PHẦN 1: TẢI DỮ LIỆU "SẴN SÀNG" & LẤY MẪU
+# PHẦN 1: TẢI DỮ LIỆU & LẤY MẪU
 # =========================================================
-try:
-    df_full = pd.read_csv(r'D:/CODING_DATA/Du_Lieu_Full_San_Sang_Clustering.csv')
-except FileNotFoundError:
-    print("LỖI: Không tìm thấy file! Bạn hãy kiểm tra lại xem file có nằm cùng thư mục không nhé.")
+# Đảm bảo đường dẫn này khớp với nơi bạn lưu file ở Bước 3
+duong_dan = 'Du_Lieu_Full_San_Sang_Clustering.csv' 
+
+if not os.path.exists(duong_dan):
+    print(f"LỖI: Không tìm thấy file {duong_dan}!")
     exit()
 
-# Trích xuất 5000 dòng để vẽ Dendrogram mượt mà và chạy DBSCAN không bị tràn RAM
-df_sample = df_full.sample(n=5000, random_state=42)
+df_full = pd.read_csv(duong_dan)
 
-# Tách nhãn và đặc trưng (Dữ liệu trong file này ĐÃ ĐƯỢC CHUẨN HÓA từ trước)
-y_thuc_te = df_sample['Vỡ_Nợ_Trong_2_Năm'].values
-X_scaled = df_sample.drop(columns=['Vỡ_Nợ_Trong_2_Năm']).values
+# Lấy mẫu 5000 dòng để máy chạy nhanh và biểu đồ Dendrogram không bị rối
+df_sample = df_full.sample(n=min(5000, len(df_full)), random_state=42)
 
-# Chạy PCA 2 chiều để phục vụ cho việc vẽ biểu đồ lưới 4 thuật toán ở cuối
+# FIX: Đổi 'Vỡ_Nợ_Trong_2_Năm' thành 'Vo_No' cho đồng bộ
+y_thuc_te = df_sample['Vo_No'].values
+X_scaled = df_sample.drop(columns=['Vo_No']).values
+
+# PCA 2 chiều để vẽ biểu đồ
 X_pca = PCA(n_components=2).fit_transform(X_scaled)
 
-
 # =========================================================
-# PHẦN 2: VẼ 3 BIỂU ĐỒ CHỨNG MINH THAM SỐ (HỌC THUẬT)
+# PHẦN 2: CÁC BIỂU ĐỒ CHỨNG MINH THAM SỐ
 # =========================================================
-print("\n[2/3] Đang vẽ các biểu đồ học thuật chứng minh tham số...")
-print("LƯU Ý: Mỗi khi biểu đồ hiện lên, bạn cần TẮT (dấu X) cửa sổ ảnh đó đi thì code mới chạy tiếp!")
+print("\n[1/2] Đang tạo các biểu đồ học thuật (Elbow, k-NN, Dendrogram)...")
 
-# --- Hình 1: Elbow Method (Tìm số cụm K cho K-Means) ---
+fig_params, axes_params = plt.subplots(1, 3, figsize=(20, 6))
+
+# --- 1. Elbow Method (K-Means) ---
 inertias = []
-khoang_K = range(2, 11)
-for k in khoang_K:
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X_scaled)
-    inertias.append(kmeans.inertia_)
+K_range = range(2, 10)
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X_scaled)
+    inertias.append(km.inertia_)
+axes_params[0].plot(K_range, inertias, marker='o', color='#2c3e50', lw=2)
+axes_params[0].set_title('1. Phương pháp Elbow (K-Means)', fontweight='bold')
+axes_params[0].set_xlabel('Số cụm K')
+axes_params[0].set_ylabel('Inertia')
 
-plt.figure(figsize=(8, 5))
-plt.plot(khoang_K, inertias, marker='o', linestyle='-', color='#2c3e50', linewidth=2, markersize=8)
-plt.title('Phương pháp Elbow xác định số cụm K tối ưu', fontsize=14, fontweight='bold', pad=15)
-plt.xlabel('Số lượng cụm (K)', fontsize=12)
-plt.ylabel('Tổng bình phương khoảng cách nội cụm (Inertia)', fontsize=12)
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.tight_layout()
-plt.savefig('Hinh1_Elbow.png', dpi=300)
-plt.show() 
-
-# --- Hình 2: k-NN Distance (Tìm tham số eps cho DBSCAN) ---
-k_lang_gieng = 15
-nn = NearestNeighbors(n_neighbors=k_lang_gieng).fit(X_scaled)
+# --- 2. k-NN Distance (DBSCAN) ---
+nn = NearestNeighbors(n_neighbors=10).fit(X_scaled)
 distances, _ = nn.kneighbors(X_scaled)
-khoang_cach_k = np.sort(distances[:, k_lang_gieng-1])
+dist_sorted = np.sort(distances[:, 9])
+axes_params[1].plot(dist_sorted, color='#27ae60', lw=2)
+axes_params[1].axhline(y=1.5, color='red', linestyle='--', label='eps ≈ 1.5')
+axes_params[1].set_title('2. k-NN Distance (DBSCAN)', fontweight='bold')
+axes_params[1].legend()
 
-plt.figure(figsize=(8, 5))
-plt.plot(khoang_cach_k, color='#27ae60', linewidth=2)
-plt.title(f'Biểu đồ k-NN Distance (Xác định tham số eps)', fontsize=14, fontweight='bold', pad=15)
-plt.xlabel('Các điểm dữ liệu (Đã sắp xếp)', fontsize=12)
-plt.ylabel(f'Khoảng cách tới láng giềng thứ {k_lang_gieng}', fontsize=12)
-plt.axhline(y=1.5, color='red', linestyle='--', linewidth=2, label='Gợi ý eps ≈ 1.5')
-plt.legend()
-plt.grid(True, linestyle='--', alpha=0.6)
+# --- 3. Dendrogram (Hierarchical) ---
+axes_params[2].set_title('3. Dendrogram (Hierarchical)', fontweight='bold')
+shc.dendrogram(shc.linkage(X_scaled, method='ward'), ax=axes_params[2], truncate_mode='level', p=3)
+axes_params[2].axhline(y=45, color='red', linestyle='--')
+
 plt.tight_layout()
-plt.savefig('Hinh2_kNN.png', dpi=300)
+plt.savefig('Bieu_Do_Tham_So.png', dpi=300)
+print("-> Đã lưu: Bieu_Do_Tham_So.png")
 plt.show()
 
-# --- Hình 3: Dendrogram (Sơ đồ cây Hierarchical Clustering) ---
-plt.figure(figsize=(10, 6))
-plt.title("Sơ đồ cây phân cấp - Dendrogram (Phương pháp Ward)", fontsize=14, fontweight='bold', pad=15)
-shc.dendrogram(shc.linkage(X_scaled, method='ward'), truncate_mode='level', p=5, color_threshold=45)
-plt.axhline(y=45, color='red', linestyle='--', linewidth=2, label='Đường cắt ngang (Sinh ra 3 cụm)')
-plt.ylabel('Khoảng cách Euclidean', fontsize=12)
-plt.legend()
-plt.tight_layout()
-plt.savefig('Hinh3_Dendrogram.png', dpi=300)
-plt.show()
-
-
 # =========================================================
-# PHẦN 3: VẼ LƯỚI 4 BIỂU ĐỒ PHÂN CỤM (K-Means, GMM, Hierarchical, DBSCAN)
+# PHẦN 3: SO SÁNH 4 THUẬT TOÁN PHÂN CỤM
 # =========================================================
-print("\n[3/3] Đang chạy 4 thuật toán và vẽ phân cụm...")
-so_cum = 3
+print("\n[2/2] Đang chạy phân cụm và trực quan hóa PCA...")
+
 cac_mo_hinh = {
-    "K-Means Clustering": KMeans(n_clusters=so_cum, random_state=42, n_init=10),
-    "Gaussian Mixture (GMM)": GaussianMixture(n_components=so_cum, random_state=42),
-    "Hierarchical Clustering": AgglomerativeClustering(n_clusters=so_cum),
-    "DBSCAN (Density-based)": DBSCAN(eps=1.5, min_samples=15)
+    "K-Means": KMeans(n_clusters=3, random_state=42, n_init=10),
+    "GMM": GaussianMixture(n_components=3, random_state=42),
+    "Hierarchical": AgglomerativeClustering(n_clusters=3),
+    "DBSCAN": DBSCAN(eps=1.5, min_samples=15)
 }
 
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 axes = axes.flatten()
-fig.patch.set_facecolor('#ffffff')
 
-for i, (ten_mo_hinh, mo_hinh) in enumerate(cac_mo_hinh.items()):
-    # Huấn luyện mô hình ngay trên dữ liệu mẫu
-    nhan_cum = mo_hinh.fit_predict(X_scaled)
-    so_luong_cum = len(set(nhan_cum)) - (1 if -1 in nhan_cum else 0)
+for i, (name, model) in enumerate(cac_mo_hinh.items()):
+    labels = model.fit_predict(X_scaled)
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     
-    # Vẽ Scatter Plot trên không gian 2D của PCA
-    scatter = axes[i].scatter(X_pca[:, 0], X_pca[:, 1], c=nhan_cum, cmap='plasma', s=20, alpha=0.7)
-    axes[i].set_title(f"{ten_mo_hinh}\n(Số cụm sinh ra: {so_luong_cum})", fontsize=15, fontweight='bold', pad=10, color='#2c3e50')
-    axes[i].set_xlabel("Thành phần chính 1 (PC1)", fontsize=12)
-    axes[i].set_ylabel("Thành phần chính 2 (PC2)", fontsize=12)
-    axes[i].grid(True, linestyle='--', alpha=0.5)
-    
-    # Thanh màu Legend
-    fig.colorbar(scatter, ax=axes[i], label='Cụm')
+    sc = axes[i].scatter(X_pca[:, 0], X_pca[:, 1], c=labels, cmap='viridis', s=15, alpha=0.6)
+    axes[i].set_title(f"{name} (Số cụm: {n_clusters})", fontsize=14, fontweight='bold')
+    plt.colorbar(sc, ax=axes[i])
 
-plt.tight_layout(pad=4.0)
-plt.savefig('Hinh4_Luoi_4_Mo_Hinh.png', dpi=300)
-
-print("\nĐANG HIỂN THỊ BỨC ẢNH CUỐI CÙNG (LƯỚI 4 MÔ HÌNH)...")
+plt.tight_layout()
+plt.savefig('Ket_Qua_Phan_Cum.png', dpi=300)
+print("-> Đã lưu: Ket_Qua_Phan_Cum.png")
 plt.show()
 
-print("\n=== ĐÃ HOÀN TẤT TOÀN BỘ QUY TRÌNH! ===")
-print("Các file ảnh đã được tự động lưu lại thành công: ")
-print("- Hinh1_Elbow.png\n- Hinh2_kNN.png\n- Hinh3_Dendrogram.png\n- Hinh4_Luoi_4_Mo_Hinh.png")
+print("\n=== HOÀN TẤT! Dữ liệu của bạn đã được phân cụm thành công. ===")
